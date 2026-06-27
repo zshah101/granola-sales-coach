@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="Granola Sales Coach — AI coaching for your meeting transcripts">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="20%" r="60%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.20"/>
+      <stop offset="50%" stop-color="#14b8a6" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1280" height="400" fill="#020617"/>
+  <rect width="1280" height="400" fill="url(#glow)"/>
+
+  <!-- faint grid -->
+  <g stroke="#38bdf8" stroke-opacity="0.05" stroke-width="1">
+    <line x1="0" y1="100" x2="1280" y2="100"/>
+    <line x1="0" y1="200" x2="1280" y2="200"/>
+    <line x1="0" y1="300" x2="1280" y2="300"/>
+    <line x1="320" y1="0" x2="320" y2="400"/>
+    <line x1="640" y1="0" x2="640" y2="400"/>
+    <line x1="960" y1="0" x2="960" y2="400"/>
+  </g>
+
+  <!-- top pill -->
+  <g transform="translate(486,56)">
+    <rect x="0" y="0" width="308" height="30" rx="15" fill="#0b1220" stroke="#38bdf8" stroke-opacity="0.35"/>
+    <circle cx="22" cy="15" r="4" fill="#2dd4bf"/>
+    <text x="40" y="20" font-family="'SF Mono','Consolas',ui-monospace,monospace" font-size="12.5" letter-spacing="3" fill="#7dd3fc">MEETING  TRANSCRIPT  ANALYZER</text>
+  </g>
+
+  <!-- wordmark -->
+  <text x="640" y="190" text-anchor="middle" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="92" font-weight="800" letter-spacing="1">
+    <tspan fill="#e2e8f0">Granola </tspan><tspan fill="url(#word)">Sales Coach</tspan>
+  </text>
+  <text x="640" y="232" text-anchor="middle" font-family="'Segoe UI',Arial,sans-serif" font-size="19" fill="#94a3b8">Paste a meeting transcript. Find out how the sales call actually went.</text>
+
+  <!-- classification motif -->
+  <g transform="translate(486,266)" font-family="'Segoe UI',Arial,sans-serif" font-size="14" font-weight="700">
+    <g>
+      <rect x="0" y="0" width="146" height="34" rx="17" fill="#10b981" fill-opacity="0.12" stroke="#10b981" stroke-opacity="0.5"/>
+      <circle cx="22" cy="17" r="5" fill="#34d399"/>
+      <text x="36" y="22" fill="#6ee7b7">Sales Call</text>
+    </g>
+    <g transform="translate(162,0)">
+      <rect x="0" y="0" width="146" height="34" rx="17" fill="#f43f5e" fill-opacity="0.10" stroke="#f43f5e" stroke-opacity="0.45"/>
+      <circle cx="22" cy="17" r="5" fill="#fb7185"/>
+      <text x="36" y="22" fill="#fda4af">Not Sales Call</text>
+    </g>
+  </g>
+
+  <!-- feature chips -->
+  <g font-family="'Segoe UI',Arial,sans-serif" font-size="13.5">
+    <g transform="translate(150,150)">
+      <circle cx="0" cy="-4" r="4" fill="#38bdf8"/>
+      <text x="14" y="0" fill="#e2e8f0" font-weight="700">Structured JSON</text>
+      <text x="14" y="17" fill="#64748b" font-size="11.5">strict schema, no guessing</text>
+    </g>
+    <g transform="translate(150,250)">
+      <circle cx="0" cy="-4" r="4" fill="#38bdf8"/>
+      <text x="14" y="0" fill="#e2e8f0" font-weight="700">Confidence 0–100</text>
+      <text x="14" y="17" fill="#64748b" font-size="11.5">with 3 signals</text>
+    </g>
+    <g transform="translate(1010,150)">
+      <circle cx="0" cy="-4" r="4" fill="#2dd4bf"/>
+      <text x="14" y="0" fill="#e2e8f0" font-weight="700">Coaching pack</text>
+      <text x="14" y="17" fill="#64748b" font-size="11.5">wins, fixes, next steps</text>
+    </g>
+    <g transform="translate(1010,250)">
+      <circle cx="0" cy="-4" r="4" fill="#2dd4bf"/>
+      <text x="14" y="0" fill="#e2e8f0" font-weight="700">Follow-up email</text>
+      <text x="14" y="17" fill="#64748b" font-size="11.5">drafted &amp; ready to copy</text>
+    </g>
+  </g>
+
+  <!-- footer tag -->
+  <text x="640" y="346" text-anchor="middle" font-family="'SF Mono',ui-monospace,monospace" font-size="11.5" letter-spacing="3" fill="#475569">TRANSCRIPT  →  GPT-4o-mini  →  CLASSIFY  →  COACH</text>
+</svg>
