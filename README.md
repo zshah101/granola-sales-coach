@@ -13,11 +13,11 @@
 
 <p align="center">
   <b>Paste a meeting transcript. Get told whether it was a sales call — and exactly how to run the next one better.</b><br>
-  Granola Sales Coach reads a transcript, decides if it's a sales call, and writes you a coaching pack plus a ready-to-send follow-up email.
+  Granola Sales Coach reads a transcript, decides if it's a sales call, and writes you a coaching pack plus a follow-up email draft to review.
 </p>
 
 <p align="center">
-  <a href="https://granola-sales-coach.vercel.app/"><b>► Try the live app</b></a>
+  <a href="https://granola-sales-coach.vercel.app/"><b>► View the app</b></a>
 </p>
 
 ---
@@ -53,6 +53,8 @@ Paste a transcript (from Granola, or any meeting tool) and **Granola Sales Coach
 
 If it isn't a sales call, it says so and stops — no fake coaching on your standup.
 
+The interface is public. Paid analysis requires the owner's private access code, which creates a signed one-hour browser session.
+
 ---
 
 ## Why I built it
@@ -61,7 +63,7 @@ Sales reps replay calls in their head for hours and still miss the obvious stuff
 
 I wanted the shortest possible loop between *"here's what was said"* and *"here's how to do better next time."* Paste, wait a few seconds, get specific feedback and a draft email. No dashboard, no setup, no integration to configure.
 
-The interesting engineering question underneath it: **how do you make a language model return something a UI can trust every single time?** A coaching tool is useless if the response is sometimes prose, sometimes JSON, sometimes missing the email. Solving that — forcing a guaranteed shape — is what most of the backend is about.
+The interesting engineering question underneath it: **how do you make a language model return something the UI can use reliably?** A coaching tool is useless if the response is sometimes prose, sometimes JSON, sometimes missing the email. Structured Outputs plus server-side validation make that contract explicit.
 
 ---
 
@@ -81,19 +83,20 @@ Plus the verdict up top: *Sales Call / Not Sales Call*, a 0–100 confidence sco
 
 ## How it works
 
-One transcript, one API route, one model call with a guaranteed response shape.
+One transcript, one protected analysis route, one model call with a validated response shape.
 
 ```mermaid
 flowchart TD
     U["You paste a meeting transcript"] --> UI["Next.js UI<br/>app/page.tsx"]
     UI -->|POST /api/analyze| API["API route<br/>app/api/analyze/route.ts"]
-    API -->|"transcript, first 8k chars"| AI["OpenAI GPT-4o-mini<br/>temp 0.2 · Structured Outputs"]
+    API --> AUTH["Validate owner session, origin and input limits"]
+    AUTH -->|"transcript, up to 8k chars"| AI["OpenAI GPT-4o-mini<br/>temp 0.2 · Structured Outputs"]
     AI -->|"strict JSON schema"| OUT["classification + confidence<br/>+ reasons + coaching_pack"]
     OUT --> API
     API --> UI
     UI --> CARD["Verdict card<br/>Sales Call / Not + confidence + signals"]
     UI --> COACH["Coaching pack<br/>wins · fixes · questions · next steps · email"]
-    UI --> HIST[("localStorage<br/>last 10 meetings")]
+    UI --> HIST[("React memory<br/>last 10 meetings in this tab")]
 ```
 
 ---
@@ -109,12 +112,12 @@ sequenceDiagram
 
     You->>UI: paste transcript, click "Analyze Meeting"
     UI->>API: POST { transcript }
-    API->>API: truncate to 8000 chars
+    API->>API: verify owner session and same origin; reject invalid or oversized input
     API->>AI: system prompt + transcript, response_format = strict json_schema
     AI-->>API: JSON (classification, confidence, reasons, coaching_pack)
-    API->>API: defensive check (rate-limit / empty response)
+    API->>API: bound response size, validate fields, counts and text lengths
     API-->>UI: { result }
-    UI->>UI: parse, then save to localStorage (keep last 10)
+    UI->>UI: validate, then keep last 10 results in tab memory
     UI-->>You: verdict card + coaching pack + copy buttons
 ```
 
@@ -122,7 +125,7 @@ sequenceDiagram
 
 ## The output contract
 
-This is the heart of the project. The model isn't asked to "please return JSON" — it's pinned to a **strict JSON schema** via OpenAI's Structured Outputs, so the response is guaranteed to match this shape or the call fails. The UI never has to defend against a stray sentence or a missing field.
+The model is given a **strict JSON schema** through OpenAI's Structured Outputs. The server also checks the classification, confidence range, exact list counts and text lengths. Refusals, truncated outputs and malformed responses return a safe error instead of reaching the result cards.
 
 ```mermaid
 flowchart LR
@@ -144,7 +147,7 @@ flowchart LR
 
 ## How the frontend is wired
 
-It's a single client page. State lives in React; history lives in the browser.
+It's a single client page. Inputs, results and recent meetings live in React memory for the current tab.
 
 ```mermaid
 flowchart TD
@@ -153,11 +156,11 @@ flowchart TD
     PAGE --> AN["analyze() → POST /api/analyze"]
     PAGE --> SEC["Section component · renders each coaching list"]
     PAGE --> CB["copyEmail / copyFeedback<br/>clipboard API + execCommand fallback"]
-    PAGE --> LS[("localStorage · meetingHistory")]
+    PAGE --> LS[("React memory · recent meetings")]
     AN --> LS
 ```
 
-The **Recent Meetings** list is read from `localStorage` on load and capped at the last 10. Click any past meeting to reload its full result instantly — no second API call.
+The **Recent Meetings** list contains up to 10 results from the current tab. Click one to reopen it without another model call. Reloading or signing out clears this memory. Saved history from the previous version is not loaded or modified automatically; an explicit delete control removes it from this browser.
 
 ---
 
@@ -165,13 +168,14 @@ The **Recent Meetings** list is read from `localStorage` on load and capped at t
 
 | Decision | Why |
 |---|---|
-| **Structured Outputs with a `strict` JSON schema** | The model is forced to return exactly `{ classification, confidence, reasons, coaching_pack }` — fixed-length arrays and all. No regex, no "did it return JSON this time" branching. The contract is the schema. |
+| **Structured Outputs plus server validation** | The model receives a strict object schema; the server checks exact list counts, confidence and text bounds before displaying a result. |
 | **Classify first, coach second** | The model decides *Sales Call / Not* before anything else, and returns `null` coaching for non-sales meetings — so the tool doesn't hallucinate sales advice on an engineering standup. |
 | **`temperature: 0.2`** | Low enough that the same transcript gives a stable verdict, with just enough room for the email to read naturally. |
-| **Transcript capped at 8,000 chars** | Keeps latency and token cost predictable; the UI warns you when it's analyzing a partial transcript. |
-| **History in `localStorage`, not a database** | The last 10 meetings stay on your machine. No accounts, no server-side storage of what was said in your calls. |
+| **Transcript capped at 8,000 chars** | Oversized transcripts are rejected before model use. Request streams are bounded to 64 KiB with a five-second read deadline. |
+| **Owner-only analysis** | The server validates a signed, expiring HttpOnly session before reading transcripts or contacting the provider. Missing or weak access-code configuration disables analysis. |
+| **History in tab memory** | New results are not written to localStorage or a database. An explicit control can delete history stored by the older version. |
 | **Clipboard with a fallback** | Copy buttons use the async Clipboard API and fall back to a hidden-textarea `execCommand` copy for browsers/contexts that block it. |
-| **Defensive check on the AI response** | If OpenAI returns no choices (rate limit, bad key), the route throws a clean error instead of crashing on `undefined`. |
+| **Bounded provider work** | A 25-second timeout, 2,000-token output cap, 64 KiB response limit and server validation constrain each owner request. Provider errors are sanitized; transcript-derived content is not logged by the app. |
 
 ---
 
@@ -183,7 +187,7 @@ The **Recent Meetings** list is read from `localStorage` on load and capped at t
 | Language | TypeScript |
 | Styling | Tailwind CSS v4 |
 | AI | OpenAI GPT-4o-mini (Structured Outputs) |
-| State / history | React state + browser `localStorage` |
+| State / history | React state, current tab only |
 | Hosting | Vercel |
 
 No client SDKs and no database — the backend is a single `fetch` to OpenAI, which keeps the dependency list tiny.
@@ -195,7 +199,10 @@ No client SDKs and no database — the backend is a single `fetch` to OpenAI, wh
 ```text
 granola-sales-coach/
 ├── app/
-│   ├── api/analyze/route.ts   # the one endpoint: transcript -> GPT-4o-mini -> strict JSON
+│   ├── api/analyze/route.ts   # owner-authenticated transcript -> GPT-4o-mini -> validated JSON
+│   ├── api/owner-session/    # login, session status and logout
+│   ├── lib/                  # server auth, bounded request guards and shared result contract
+│   ├── components/           # owner access dialog
 │   ├── layout.tsx             # fonts + metadata
 │   ├── page.tsx               # the whole UI: input, verdict, coaching pack, history
 │   └── globals.css            # Tailwind + theme tokens
@@ -208,10 +215,10 @@ granola-sales-coach/
 
 ## Run it locally
 
-You'll need an OpenAI API key.
+You'll need an OpenAI API key and a private, randomly generated access code of at least 32 characters. Generate the code with a password manager and keep it out of Git and screenshots.
 
 ```bash
-git clone https://github.com/ShahZainSahir/granola-sales-coach.git
+git clone https://github.com/zshah101/granola-sales-coach.git
 cd granola-sales-coach
 npm install
 ```
@@ -220,6 +227,7 @@ Create a `.env.local` in the project root:
 
 ```bash
 OPENAI_API_KEY=sk-...
+AI_OWNER_ACCESS_CODE=<your-random-private-code>
 ```
 
 Then:
@@ -228,14 +236,23 @@ Then:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), paste a transcript, and hit **Analyze Meeting**. The `.env.local` is git-ignored — your key never leaves your machine.
+Open [http://localhost:3000](http://localhost:3000), select **Owner access** and enter the private code. Then paste a transcript and select **Analyze Meeting**. The `.env.local` file is Git-ignored. The API key stays in server configuration and is sent to OpenAI over HTTPS for authentication; it is never placed in browser code.
+
+For Vercel, configure both variables as server-only environment variables in every environment that should support analysis, then redeploy. Do not prefix them with `NEXT_PUBLIC_`. Without a valid access code, public pages still load and the paid endpoint fails closed. Rotating the access code invalidates existing sessions. Signing out deletes this browser's cookie; a copied session token remains valid until its one-hour expiry or code rotation.
+
+Run `npm run test:security`, `npm run lint` and `npm run build` before deploying. Security tests use synthetic credentials and a mocked provider; they make no paid requests.
 
 ---
 
 ## Privacy
 
-- **Transcripts aren't stored server-side.** They're sent to OpenAI for the single analysis call and not persisted by this app.
-- **History is local only.** Your last 10 meetings live in your browser's `localStorage`, and the **Delete history** button clears them.
+- **Provider processing:** Authenticated analysis sends the transcript to OpenAI. Its data handling and retention follow the provider's settings and policies. Avoid passwords, API keys and sensitive customer material without appropriate permission.
+- **Application storage:** This version does not save transcripts or analysis to a server database or log their contents. New results remain in the current tab's memory, with up to 10 recent results. Signing out, reloading or closing the tab clears them.
+- **Older browser history:** Earlier versions wrote results to `localStorage`. This version leaves that data in place until you use **Delete previously saved history**; it does not load it into the UI. The delete control also clears the current input and results.
+- **Hosting logs:** The previous version logged generated coaching and emails. Updating the app does not erase previously captured hosting logs or exports; review their retention and access separately. Hosting may retain ordinary request metadata independently of this app.
+- **Drafts need review:** The app does not send emails, access a CRM or import from Granola directly. Review generated advice and email drafts before using them.
+
+The owner session prevents anonymous paid use, but it is not a distributed quota or spending cap. Keep the access code private, use a dedicated provider key and review provider usage/limits and hosting account access.
 
 ---
 

@@ -1,20 +1,36 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
+import OwnerAccess from "./components/owner-access"
+import { validAnalysis } from "./lib/analysis-contract"
+import type { Analysis } from "./lib/analysis-contract"
 
 export default function Home(){
 
  const [transcript,setTranscript] = useState("")
- const [result,setResult] = useState<any>(null)
+ const [result,setResult] = useState<Analysis | null>(null)
  const [loading,setLoading] = useState(false)
- const [history,setHistory] = useState<any[]>([])
+ const [history,setHistory] = useState<{timestamp: number; result: Analysis}[]>([])
+ const [owner,setOwner] = useState(false)
+ const [savedHistory,setSavedHistory] = useState(false)
+ const [error,setError] = useState("")
  const [emailCopied,setEmailCopied] = useState(false)
  const [feedbackCopied,setFeedbackCopied] = useState(false)
+ const pendingAnalysis = useRef<AbortController | null>(null)
 
  useEffect(()=>{
-  const saved = JSON.parse(localStorage.getItem("meetingHistory") || "[]")
-  setHistory(saved)
+  try { setSavedHistory(localStorage.getItem("meetingHistory") !== null) } catch {}
  },[])
+
+ const changeOwner = useCallback((authenticated: boolean) => {
+  setOwner(authenticated)
+  if (!authenticated) {
+   pendingAnalysis.current?.abort()
+   setResult(null); setTranscript(""); setHistory([])
+  }
+ }, [])
+
+ useEffect(() => () => pendingAnalysis.current?.abort(), [])
 
  async function copyText(text:string){
   try{
@@ -62,58 +78,59 @@ ${result.coaching_pack.next_steps.join("\n")}
 
  async function analyze(){
 
-  if(!transcript.trim()) return
+   if(!owner || !transcript.trim()) return
 
   if(transcript.length>8000){
-   alert("Partial transcript analyzed.")
+    setError("Please use a transcript of 8000 characters or fewer.")
+    return
   }
 
   setLoading(true)
+  setError("")
+  pendingAnalysis.current?.abort()
+  const controller = new AbortController()
+  pendingAnalysis.current = controller
 
   try{
 
    const res=await fetch("/api/analyze",{
     method:"POST",
+    signal:controller.signal,
     headers:{ "Content-Type":"application/json" },
     body:JSON.stringify({transcript})
    })
 
    const data=await res.json()
+   if (controller.signal.aborted) return
 
-   let cleaned=data.result
-     .replace(/```json/g,"")
-     .replace(/```/g,"")
-     .trim()
-
-   const parsed=JSON.parse(cleaned)
+   if (!res.ok) {
+    if (res.status === 401) changeOwner(false)
+    setError(data.error || "Unable to analyze this transcript.")
+    return
+   }
+   const parsed = data.result
+   if (!validAnalysis(parsed)) throw new Error("Invalid response")
 
    setResult(parsed)
 
-   const saved=JSON.parse(localStorage.getItem("meetingHistory") || "[]")
+   setHistory(previous => [{timestamp:Date.now(), result:parsed}, ...previous].slice(0,10))
 
-   saved.unshift({
-    timestamp:Date.now(),
-    transcript:transcript.substring(0,80)+"...",
-    result:parsed
-   })
-
-   const trimmed=saved.slice(0,10)
-
-   localStorage.setItem("meetingHistory",JSON.stringify(trimmed))
-
-   setHistory(trimmed)
-
-  }catch(e){
-   console.error(e)
-   alert("Failed to analyze transcript.")
+  }catch{
+   if (!controller.signal.aborted) setError("Unable to analyze this transcript. Please try again.")
+  }finally{
+   if (pendingAnalysis.current === controller) {
+    pendingAnalysis.current = null
+    setLoading(false)
+   }
   }
-
-  setLoading(false)
  }
 
  function clearHistory(){
-  localStorage.removeItem("meetingHistory")
+  pendingAnalysis.current?.abort()
+  try { localStorage.removeItem("meetingHistory"); setSavedHistory(false) } catch { setError("Unable to delete previously saved history.") }
   setHistory([])
+  setResult(null)
+  setTranscript("")
  }
 
  return(
@@ -132,15 +149,18 @@ ${result.coaching_pack.next_steps.join("\n")}
   </p>
  </div>
 
+ <OwnerAccess authenticated={owner} onChange={changeOwner} />
+
  {/* Integration Status Area [cite: 36] */}
  <div className="mb-8 bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 rounded-xl text-sm flex items-center justify-center gap-2 text-emerald-400 font-medium">
   <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-  Integration Status: Export / Copy Workflow Active
+  Drafts stay in this tab. Review them before copying or sending.
  </div>
 
  {/* Input Container */}
  <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-2xl">
   <textarea
+   aria-label="Meeting transcript"
    className="w-full h-40 bg-slate-950/50 border border-slate-700/50 rounded-xl p-4 text-slate-200 placeholder-slate-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 outline-none transition resize-y"
    placeholder="Paste your Granola meeting transcript here..."
    value={transcript}
@@ -149,18 +169,25 @@ ${result.coaching_pack.next_steps.join("\n")}
 
   <button
    onClick={analyze}
-   disabled={loading || !transcript.trim()}
+   disabled={loading || !owner || !transcript.trim()}
    className="mt-5 w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 disabled:cursor-not-allowed py-3.5 rounded-xl font-bold text-white shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]"
   >
-   {loading ? "AI is analyzing meeting..." : "Analyze Meeting"}
+   {loading ? "AI is analyzing meeting..." : owner ? "Analyze Meeting" : "Owner access required"}
   </button>
+  <p className="mt-3 text-xs text-slate-400">Analysis sends your transcript to OpenAI. Avoid passwords, API keys, and sensitive customer information.</p>
+  {error && <p className="mt-3 text-sm text-rose-300" role="alert">{error}</p>}
  </div>
+
+ {savedHistory && <div className="mt-4 rounded-xl border border-slate-800 p-4 text-sm text-slate-400">
+  <p>History saved by the previous version is still in this browser. New analyses are no longer saved. You can delete the older saved history here.</p>
+  <button type="button" onClick={clearHistory} className="mt-3 text-rose-300 underline">Delete previously saved history</button>
+ </div>}
 
  {/* History Area [cite: 37] */}
  {history.length>0 && (
  <div className="mt-8 bg-slate-900/40 border border-slate-800 rounded-2xl p-6">
   <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">
-   Recent Meetings
+   This Tab’s Recent Meetings
   </h3>
   <ul className="space-y-2">
    {history.map((h,i)=>(
